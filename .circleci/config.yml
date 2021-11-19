@@ -1,0 +1,50 @@
+version: 2.1
+
+orbs:
+  tools: replikativ/clj-tools@0
+
+workflows:
+  build-test-and-deploy:
+    jobs:
+      - tools/setup:
+          context: dockerhub-deploy
+          setup_cljs: false
+      - tools/format:
+          context: dockerhub-deploy
+          requires:
+            - tools/setup
+      - tools/unittest:
+          context: dockerhub-deploy
+          requires:
+            - tools/setup
+      - tools/build:
+          jarname: "konserve-rocksdb"
+          context: dockerhub-deploy
+          requires:
+            - tools/setup
+      - tools/deploy-snapshot:
+          jarname: "konserve-rocksdb"
+          context:
+            - clojars-deploy
+            - dockerhub-deploy
+          filters:
+            branches:
+              only: development
+          requires:
+            - tools/setup
+            - tools/format
+            - tools/unittest
+            - tools/build
+      - tools/deploy-release:
+          jarname: "konserve-rocksdb"
+          context:
+            - clojars-deploy
+            - dockerhub-deploy
+          filters:
+            branches:
+              only: master
+          requires:
+            - tools/setup
+            - tools/format
+            - tools/unittest
+            - tools/build
