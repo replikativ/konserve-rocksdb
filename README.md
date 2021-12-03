@@ -11,12 +11,12 @@ A [RocksDB](https://github.com/kotyo/clj-rocksdb) backend for [konserve](https:/
 ### Synchronous Execution
 
 ``` clojure
-(require '[konserve-jdbc.core :refer [connect-rocksdb-store]]
+(require '[konserve-rocksdb.core :refer [connect-rocksdb-store delete-rocksdb-store release-rocksdb]]
          '[konserve.core :as k])
 
 (def path "./tmp/rocksdb/konserve")
    
-(def store (connect-jdbc-store db-spec :opts {:sync? true}))
+(def store (connect-rocksdb-store db-spec :opts {:sync? true}))
 
 (k/assoc-in store ["foo" :bar] {:foo "baz"} {:sync? true})
 (k/get-in store ["foo"] nil {:sync? true})
@@ -37,20 +37,22 @@ A [RocksDB](https://github.com/kotyo/clj-rocksdb) backend for [konserve](https:/
 (k/bget store :binbar (fn [{:keys [input-stream]}]
                                (map byte (slurp input-stream)))
        {:sync? true})
-               
+       
+(release-rocksdb store)
+(delete-rocksdb-store path :opts {:sync? true})
 ```
 
 ### Asynchronous Execution
 
 ``` clojure
 (ns test-db
-  (require '[konserve-jdbc.core :refer [connect-rocksdb-store]]
+  (require '[konserve-rocksdb.core :refer [connect-rocksdb-store delete-rocksdb-store release-rocksdb]]
            '[clojure.core.async :refer [<!]]
            '[konserve.core :as k])
 
 (def path "./tmp/rocksdb/konserve")
    
-(def store (<! (connect-jdbc-store db-path :opts {:sync? false})))
+(def store (<! (connect-rocksdb-store db-path :opts {:sync? false})))
 
 (<! (k/assoc-in store ["foo" :bar] {:foo "baz"}))
 (<! (k/get-in store ["foo"]))
@@ -68,6 +70,9 @@ A [RocksDB](https://github.com/kotyo/clj-rocksdb) backend for [konserve](https:/
 (<! (k/bget store :binbar (fn [{:keys [input-stream]}]
                             (map byte (slurp input-stream)))
             {:sync? false}))
+            
+(release-rocksdb store)
+(delete-rocksdb-store  path :opts {:sync? false})
 ```
 
 
