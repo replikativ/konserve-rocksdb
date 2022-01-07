@@ -8,3 +8,6 @@ profiles.clj
 /.nrepl-port
 .hgignore
 .hg/
+.cpcache/
+.idea/
+konserve-rocksdb.iml

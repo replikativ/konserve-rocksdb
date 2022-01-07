@@ -11,8 +11,7 @@
             [taoensso.nippy :as nippy]
             [taoensso.timbre :refer [warn]]
             [clojure.string :as str])
-  (:import (java.io ByteArrayInputStream)
-           (clj_rocksdb DB)))
+  (:import (java.io ByteArrayInputStream)))
 
 (set! *warn-on-reflection* 1)
 
@@ -142,4 +141,4 @@
     (-delete-store backing complete-opts)))
 
 (defn release-rocksdb [store]
-  (.close ^DB (-> store :backing :db deref)))
+  (.close ^org.rocksdb.RocksDB (-> store :backing :db deref))) ;; type hint doesn't clear reflection warning
