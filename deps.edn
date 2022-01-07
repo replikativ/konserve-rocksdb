@@ -5,7 +5,7 @@
         com.taoensso/nippy {:mvn/version "3.1.1"}
         io.replikativ/konserve {:mvn/version "0.6.0-SNAPSHOT"}
         io.replikativ/superv.async {:mvn/version "0.2.11"}}
- :aliases {:test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.945"}}
+ :aliases {:test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.977"}}
                   :extra-paths ["test"]}
            :jar {:extra-deps {seancorfield/depstar {:mvn/version "1.1.116"}}
                  :main-opts ["-m" "hf.depstar.jar" "replikativ-konserve-rocksdb.jar"]}
