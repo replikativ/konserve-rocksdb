@@ -1,5 +1,5 @@
 (ns konserve-rocksdb.core-test
-  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+  (:require [clojure.test :refer [deftest testing]]
             [clojure.core.async :refer [<!!]]
             [konserve.compliance-test :refer [compliance-test]]
             [konserve-rocksdb.core :refer [connect-rocksdb-store

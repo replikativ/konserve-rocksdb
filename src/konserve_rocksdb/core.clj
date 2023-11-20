@@ -1,17 +1,16 @@
 (ns konserve-rocksdb.core
   "Address globally aggregated immutable key-value stores(s)."
-  (:require [konserve.impl.default :refer [connect-default-store]]
+  (:require [konserve.impl.defaults :refer [connect-default-store]]
             [konserve.impl.storage-layout :refer [PBackingStore PBackingBlob PBackingLock -delete-store]]
             [konserve.compressor :refer [null-compressor]]
             [konserve.encryptor :refer [null-encryptor]]
             [konserve.utils :refer [async+sync *default-sync-translation*]]
-            [superv.async :refer [go-try- <?-]]
-            [clojure.core.async :refer [go <!! chan close! put!]]
+            [superv.async :refer [go-try-]]
             [clj-rocksdb :as rocksdb]
             [taoensso.nippy :as nippy]
-            [taoensso.timbre :refer [warn]]
             [clojure.string :as str])
-  (:import (java.io ByteArrayInputStream)))
+  (:import (java.io ByteArrayInputStream)
+           (org.rocksdb RocksDB)))
 
 (set! *warn-on-reflection* 1)
 
@@ -83,7 +82,7 @@
                 (go-try-
                  (swap! data assoc :value blob)))))
 
-(defrecord RocksDB [path db]
+(defrecord RocksDBStore [path db]
   PBackingStore
   (-create-blob [_ store-key env]
     (async+sync (:sync? env) *default-sync-translation*
@@ -123,7 +122,7 @@
 
 (defn connect-rocksdb-store [path & {:keys [opts]}]
   (let [complete-opts (merge {:sync? true} opts)
-        backing (RocksDB. path (atom nil))
+        backing (RocksDBStore. path (atom nil))
         config {:path               path
                 :opts               complete-opts
                 :config             {:sync-blob? true
@@ -137,8 +136,8 @@
 
 (defn delete-rocksdb-store [path & {:keys [opts]}]
   (let [complete-opts (merge {:sync? true} opts)
-        backing (RocksDB. path (atom nil))]
+        backing (RocksDBStore. path (atom nil))]
     (-delete-store backing complete-opts)))
 
 (defn release-rocksdb [store]
-  (.close ^org.rocksdb.RocksDB (-> store :backing :db deref))) ;; type hint doesn't clear reflection warning
+  (.close ^RocksDB (-> store :backing :db deref))) ;; type hint doesn't clear reflection warning
