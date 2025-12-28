@@ -1,7 +1,9 @@
 (ns konserve-rocksdb.core
   "Address globally aggregated immutable key-value stores(s)."
   (:require [konserve.impl.defaults :refer [connect-default-store]]
-            [konserve.impl.storage-layout :refer [PBackingStore PBackingBlob PBackingLock -delete-store]]
+            [konserve.impl.storage-layout :refer [PBackingStore PBackingBlob PBackingLock
+                                                  PMultiWriteBackingStore PMultiReadBackingStore
+                                                  -delete-store]]
             [konserve.compressor :refer [null-compressor]]
             [konserve.encryptor :refer [null-encryptor]]
             [konserve.utils :refer [async+sync *default-sync-translation*]]
@@ -9,8 +11,7 @@
             [clj-rocksdb :as rocksdb]
             [taoensso.nippy :as nippy]
             [clojure.string :as str])
-  (:import (java.io ByteArrayInputStream)
-           (org.rocksdb RocksDB)))
+  (:import (java.io ByteArrayInputStream Closeable)))
 
 (set! *warn-on-reflection* 1)
 
@@ -118,7 +119,62 @@
     (async+sync (:sync? env) *default-sync-translation*
                 (go-try- (->> (rocksdb/iterator @db)
                               (map first)
-                              (filter #(not (str/ends-with? % ".meta"))))))))
+                              (filter #(not (str/ends-with? % ".meta")))))))
+
+  PMultiWriteBackingStore
+  (-multi-write-blobs [_ store-key-values env]
+    (async+sync (:sync? env) *default-sync-translation*
+                (go-try-
+                 (if (empty? store-key-values)
+                   {}
+                   ;; Build batch with all puts: both key (value) and key.meta (header+meta)
+                   (let [puts (mapcat (fn [[store-key {:keys [header meta value]}]]
+                                        ;; Put value at key, put header+meta at key.meta
+                                        [store-key value
+                                         (str store-key ".meta") {:header header :meta meta}])
+                                      store-key-values)]
+                     (rocksdb/batch @db {:put puts})
+                     ;; Return success map
+                     (into {} (map (fn [[store-key _]] [store-key true]) store-key-values)))))))
+
+  (-multi-delete-blobs [_ store-keys env]
+    (async+sync (:sync? env) *default-sync-translation*
+                (go-try-
+                 (if (empty? store-keys)
+                   {}
+                   ;; Check which keys exist, then delete both key and key.meta
+                   (let [existing-keys (into #{}
+                                             (filter #(rocksdb/get @db %))
+                                             store-keys)
+                         deletes (mapcat (fn [store-key]
+                                           [store-key (str store-key ".meta")])
+                                         existing-keys)]
+                     (when (seq deletes)
+                       (rocksdb/batch @db {:delete deletes}))
+                     ;; Return map showing which keys existed
+                     (into {} (map (fn [k] [k (contains? existing-keys k)]) store-keys)))))))
+
+  PMultiReadBackingStore
+  (-multi-read-blobs [_ store-keys env]
+    (async+sync (:sync? env) *default-sync-translation*
+                (go-try-
+                 (if (empty? store-keys)
+                   {}
+                   ;; Fetch all keys and meta keys in one multi-get call
+                   (let [all-keys (mapcat (fn [k] [k (str k ".meta")]) store-keys)
+                         results (rocksdb/multi-get @db all-keys)]
+                     ;; Build sparse map of store-key -> RocksDBKV with pre-populated data
+                     (reduce (fn [acc store-key]
+                               (let [value (get results store-key)
+                                     meta-data (get results (str store-key ".meta"))]
+                                 (if (and value meta-data)
+                                   ;; Create blob with pre-populated data atom
+                                   (let [blob (RocksDBKV. @db store-key
+                                                          (atom (assoc meta-data :value value)))]
+                                     (assoc acc store-key blob))
+                                   acc)))
+                             {}
+                             store-keys)))))))
 
 (defn connect-rocksdb-store [path & {:keys [opts]}]
   (let [complete-opts (merge {:sync? true} opts)
@@ -140,4 +196,5 @@
     (-delete-store backing complete-opts)))
 
 (defn release-rocksdb [store]
-  (.close ^RocksDB (-> store :backing :db deref))) ;; type hint doesn't clear reflection warning
+  (when-let [^Closeable db (some-> store :backing :db deref)]
+    (.close db)))

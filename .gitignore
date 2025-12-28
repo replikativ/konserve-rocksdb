@@ -9,5 +9,7 @@ profiles.clj
 .hgignore
 .hg/
 .cpcache/
+.clj-kondo/.cache/
+.calva/
 .idea/
 konserve-rocksdb.iml
