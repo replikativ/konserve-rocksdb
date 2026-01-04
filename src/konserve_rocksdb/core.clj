@@ -7,6 +7,7 @@
             [konserve.compressor :refer [null-compressor]]
             [konserve.encryptor :refer [null-encryptor]]
             [konserve.utils :refer [async+sync *default-sync-translation*]]
+            [konserve.store :as store]
             [superv.async :refer [go-try-]]
             [clj-rocksdb :as rocksdb]
             [taoensso.nippy :as nippy]
@@ -198,3 +199,24 @@
 (defn release-rocksdb [store]
   (when-let [^Closeable db (some-> store :backing :db deref)]
     (.close db)))
+
+;; =============================================================================
+;; Multimethod Registration for konserve.store dispatch
+;; =============================================================================
+
+(defmethod store/connect-store :rocksdb
+  [{:keys [path] :as config}]
+  (let [opts (:opts config)]
+    (connect-rocksdb-store path :opts opts)))
+
+(defmethod store/empty-store :rocksdb
+  [config]
+  (store/connect-store config))
+
+(defmethod store/delete-store :rocksdb
+  [{:keys [path] :as config}]
+  (delete-rocksdb-store path :opts (:opts config)))
+
+(defmethod store/release-store :rocksdb
+  [_config store]
+  (release-rocksdb store))
