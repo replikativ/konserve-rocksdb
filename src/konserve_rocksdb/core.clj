@@ -205,34 +205,38 @@
 ;; =============================================================================
 
 (defmethod store/connect-store :rocksdb
-  [{:keys [path] :as config}]
-  ;; Check if store exists
-  (when-not (.exists (clojure.java.io/file path))
-    (throw (ex-info (str "RocksDB store does not exist at path: " path)
-                    {:path path :config config})))
-  (let [opts (:opts config)]
-    (connect-rocksdb-store path :opts opts)))
+  [{:keys [path] :as config} opts]
+  (async+sync (:sync? opts) *default-sync-translation*
+              (go-try-
+               ;; Check if store exists
+               (when-not (.exists (clojure.java.io/file path))
+                 (throw (ex-info (str "RocksDB store does not exist at path: " path)
+                                 {:path path :config config})))
+               (connect-rocksdb-store path :opts opts))))
 
 (defmethod store/create-store :rocksdb
-  [{:keys [path] :as config}]
-  ;; Check if store already exists
-  (when (.exists (clojure.java.io/file path))
-    (throw (ex-info (str "RocksDB store already exists at path: " path)
-                    {:path path :config config})))
-  (let [opts (:opts config)]
-    (connect-rocksdb-store path :opts opts)))
+  [{:keys [path] :as config} opts]
+  (async+sync (:sync? opts) *default-sync-translation*
+              (go-try-
+               ;; Check if store already exists
+               (when (.exists (clojure.java.io/file path))
+                 (throw (ex-info (str "RocksDB store already exists at path: " path)
+                                 {:path path :config config})))
+               (connect-rocksdb-store path :opts opts))))
 
 (defmethod store/store-exists? :rocksdb
-  [{:keys [path opts]}]
-  ;; RocksDB store exists if the directory exists
-  (let [opts (or opts {:sync? true})
-        exists (.exists (clojure.java.io/file path))]
-    (if (:sync? opts) exists (clojure.core.async/go exists))))
+  [{:keys [path] :as config} opts]
+  (async+sync (:sync? opts) *default-sync-translation*
+              (go-try-
+               ;; RocksDB store exists if the directory exists
+               (.exists (clojure.java.io/file path)))))
 
 (defmethod store/delete-store :rocksdb
-  [{:keys [path] :as config}]
-  (delete-rocksdb-store path :opts (:opts config)))
+  [{:keys [path] :as config} opts]
+  (async+sync (:sync? opts) *default-sync-translation*
+              (go-try-
+               (delete-rocksdb-store path :opts opts))))
 
 (defmethod store/release-store :rocksdb
-  [_config store]
+  [_config store _opts]
   (release-rocksdb store))
