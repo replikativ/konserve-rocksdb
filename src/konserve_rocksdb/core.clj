@@ -206,13 +206,21 @@
 
 (defmethod store/connect-store :rocksdb
   [{:keys [path] :as config}]
+  ;; Check if store exists
+  (when-not (.exists (clojure.java.io/file path))
+    (throw (ex-info (str "RocksDB store does not exist at path: " path)
+                    {:path path :config config})))
   (let [opts (:opts config)]
     (connect-rocksdb-store path :opts opts)))
 
 (defmethod store/create-store :rocksdb
-  [config]
-  ;; RocksDB has no creation step - same as connect
-  (store/connect-store config))
+  [{:keys [path] :as config}]
+  ;; Check if store already exists
+  (when (.exists (clojure.java.io/file path))
+    (throw (ex-info (str "RocksDB store already exists at path: " path)
+                    {:path path :config config})))
+  (let [opts (:opts config)]
+    (connect-rocksdb-store path :opts opts)))
 
 (defmethod store/store-exists? :rocksdb
   [{:keys [path opts]}]
