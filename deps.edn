@@ -5,7 +5,9 @@
         com.taoensso/nippy {:mvn/version "3.4.2"}
         io.replikativ/konserve {:mvn/version "0.8.327"}
         io.replikativ/superv.async {:mvn/version "0.3.48"}}
- :aliases {:test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}}
+ :aliases {:dev {:override-deps {io.replikativ/konserve {:local/root "../konserve"}}
+                  :extra-paths ["test"]}
+           :test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}}
                   :extra-paths ["test"]}
            :format {:extra-deps {cljfmt/cljfmt {:mvn/version "0.9.2"}}
                     :main-opts ["-m" "cljfmt.main" "check"]}

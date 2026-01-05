@@ -209,9 +209,17 @@
   (let [opts (:opts config)]
     (connect-rocksdb-store path :opts opts)))
 
-(defmethod store/empty-store :rocksdb
+(defmethod store/create-store :rocksdb
   [config]
+  ;; RocksDB has no creation step - same as connect
   (store/connect-store config))
+
+(defmethod store/store-exists? :rocksdb
+  [{:keys [path opts]}]
+  ;; RocksDB store exists if the directory exists
+  (let [opts (or opts {:sync? true})
+        exists (.exists (clojure.java.io/file path))]
+    (if (:sync? opts) exists (clojure.core.async/go exists))))
 
 (defmethod store/delete-store :rocksdb
   [{:keys [path] :as config}]
