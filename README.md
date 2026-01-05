@@ -11,12 +11,24 @@ Add to your dependencies:
 ### Synchronous Execution
 
 ``` clojure
-(require '[konserve-rocksdb.core :refer [connect-rocksdb-store delete-rocksdb-store release-rocksdb]]
+(require '[konserve-rocksdb.core]  ;; Registers the :rocksdb backend
          '[konserve.core :as k])
 
-(def path "./tmp/rocksdb/konserve")
+(def rocksdb-config
+  {:backend :rocksdb
+   :path "./tmp/rocksdb/konserve"
+   :opts {:sync? true}})
 
-(def store (connect-rocksdb-store path :opts {:sync? true}))
+;; Create a new store (same as connect for RocksDB - no creation step)
+(def store (k/create-store rocksdb-config))
+
+;; Or connect to existing store
+;; (def store (k/connect-store rocksdb-config))
+
+;; Check if store exists
+(k/store-exists? rocksdb-config) ;; => true
+
+;; Use the store
 
 (k/assoc-in store ["foo" :bar] {:foo "baz"} {:sync? true})
 (k/get-in store ["foo"] nil {:sync? true})
@@ -37,21 +49,30 @@ Add to your dependencies:
 (k/bget store :binbar (fn [{:keys [input-stream]}]
                                (map byte (slurp input-stream)))
        {:sync? true})
-       
-(release-rocksdb store)
-(delete-rocksdb-store path :opts {:sync? true})
+
+;; Clean up
+(k/delete-store rocksdb-config)
 ```
 
 ### Asynchronous Execution
 
 ``` clojure
-(require '[konserve-rocksdb.core :refer [connect-rocksdb-store delete-rocksdb-store release-rocksdb]]
-         '[clojure.core.async :refer [<!!]]
+(require '[konserve-rocksdb.core]  ;; Registers the :rocksdb backend
+         '[clojure.core.async :refer [<! <!!]]
          '[konserve.core :as k])
 
-(def path "./tmp/rocksdb/konserve")
+(def rocksdb-config
+  {:backend :rocksdb
+   :path "./tmp/rocksdb/konserve"
+   :opts {:sync? false}})
 
-(def store (<!! (connect-rocksdb-store path :opts {:sync? false})))
+;; Create a new store (async)
+(def store (<!! (k/create-store rocksdb-config)))
+
+;; Check if store exists (async)
+(<!! (k/store-exists? rocksdb-config)) ;; => true
+
+;; Use the store
 
 (<! (k/assoc-in store ["foo" :bar] {:foo "baz"}))
 (<! (k/get-in store ["foo"]))
@@ -65,13 +86,12 @@ Add to your dependencies:
 (<! (k/append store :error-log {:type :horrible}))
 (<! (k/log store :error-log))
 
-(<! (k/bassoc store :binbar (byte-array (range 10)) {:sync? false}))
+(<! (k/bassoc store :binbar (byte-array (range 10))))
 (<! (k/bget store :binbar (fn [{:keys [input-stream]}]
-                            (map byte (slurp input-stream)))
-            {:sync? false}))
-            
-(release-rocksdb store)
-(<!! (delete-rocksdb-store path :opts {:sync? false}))
+                            (map byte (slurp input-stream)))))
+
+;; Clean up
+(<!! (k/delete-store rocksdb-config))
 ```
 
 ## Multi-key Operations
