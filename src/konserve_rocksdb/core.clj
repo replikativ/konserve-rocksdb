@@ -204,7 +204,7 @@
 ;; Multimethod Registration for konserve.store dispatch
 ;; =============================================================================
 
-(defmethod store/connect-store :rocksdb
+(defmethod store/-connect-store :rocksdb
   [{:keys [path] :as config} opts]
   (async+sync (:sync? opts) *default-sync-translation*
               (go-try-
@@ -212,9 +212,9 @@
                (when-not (.exists (clojure.java.io/file path))
                  (throw (ex-info (str "RocksDB store does not exist at path: " path)
                                  {:path path :config config})))
-               (connect-rocksdb-store path :opts opts))))
+               (connect-rocksdb-store path))))
 
-(defmethod store/create-store :rocksdb
+(defmethod store/-create-store :rocksdb
   [{:keys [path] :as config} opts]
   (async+sync (:sync? opts) *default-sync-translation*
               (go-try-
@@ -222,21 +222,21 @@
                (when (.exists (clojure.java.io/file path))
                  (throw (ex-info (str "RocksDB store already exists at path: " path)
                                  {:path path :config config})))
-               (connect-rocksdb-store path :opts opts))))
+               (connect-rocksdb-store path))))
 
-(defmethod store/store-exists? :rocksdb
+(defmethod store/-store-exists? :rocksdb
   [{:keys [path] :as config} opts]
   (async+sync (:sync? opts) *default-sync-translation*
               (go-try-
                ;; RocksDB store exists if the directory exists
                (.exists (clojure.java.io/file path)))))
 
-(defmethod store/delete-store :rocksdb
+(defmethod store/-delete-store :rocksdb
   [{:keys [path] :as config} opts]
   (async+sync (:sync? opts) *default-sync-translation*
               (go-try-
-               (delete-rocksdb-store path :opts opts))))
+               (delete-rocksdb-store path))))
 
-(defmethod store/release-store :rocksdb
+(defmethod store/-release-store :rocksdb
   [_config store _opts]
   (release-rocksdb store))
