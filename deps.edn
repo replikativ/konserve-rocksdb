@@ -3,7 +3,7 @@
         io.replikativ/clj-rocksdb {:mvn/version "0.1.33"}
         com.taoensso/timbre {:mvn/version "6.6.1"}
         com.taoensso/nippy {:mvn/version "3.4.2"}
-        io.replikativ/konserve {:mvn/version "0.9.331"}
+        io.replikativ/konserve {:mvn/version "0.9.338"}
         io.replikativ/superv.async {:mvn/version "0.3.48"}}
  :aliases {:dev {:extra-paths ["test"]}
            :test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}}

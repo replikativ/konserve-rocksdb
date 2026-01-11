@@ -238,5 +238,7 @@
                (delete-rocksdb-store path))))
 
 (defmethod store/-release-store :rocksdb
-  [_config store _opts]
-  (release-rocksdb store))
+  [_config store opts]
+  ;; Release and return proper async type
+  (release-rocksdb store)
+  (if (:sync? opts) nil (go-try- nil)))
