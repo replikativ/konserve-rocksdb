@@ -6,7 +6,7 @@ A [RocksDB](https://rocksdb.org/) backend for [konserve](https://github.com/repl
 
 Add to your dependencies:
 
-[![Clojars Project](http://clojars.org/io.replikativ/konserve-rocksdb/latest-version.svg)](http://clojars.org/io.replikativ/konserve-rocksdb)
+[![Clojars Project](http://clojars.org/org.replikativ/konserve-rocksdb/latest-version.svg)](http://clojars.org/org.replikativ/konserve-rocksdb)
 
 ## Configuration
 
