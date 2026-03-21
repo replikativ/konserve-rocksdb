@@ -1,7 +1,6 @@
 {:paths ["src"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         io.replikativ/clj-rocksdb {:mvn/version "0.1.33"}
-        com.taoensso/timbre {:mvn/version "6.6.1"}
         com.taoensso/nippy {:mvn/version "3.4.2"}
         org.replikativ/konserve {:mvn/version "0.9.342"}
         org.replikativ/superv.async {:mvn/version "0.3.50"}}
