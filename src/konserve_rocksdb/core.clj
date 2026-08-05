@@ -4,8 +4,6 @@
             [konserve.impl.storage-layout :refer [PBackingStore PBackingBlob PBackingLock
                                                   PMultiWriteBackingStore PMultiReadBackingStore
                                                   -delete-store]]
-            [konserve.compressor :refer [null-compressor]]
-            [konserve.encryptor :refer [null-encryptor]]
             [konserve.utils :refer [async+sync *default-sync-translation*]]
             [konserve.store :as store]
             [superv.async :refer [go-try-]]
@@ -177,19 +175,32 @@
                              {}
                              store-keys)))))))
 
-(defn connect-rocksdb-store [path & {:keys [opts]}]
+(defn connect-rocksdb-store
+  "Connect a konserve store backed by RocksDB.
+
+  Everything except `:opts` and `:config` is forwarded to
+  `connect-default-store`, so `:default-serializer`, the handler maps and
+  `:buffer-size` all work. They did not before: this built a LITERAL config
+  map and destructured only `:opts`, so a caller asking for a different
+  serializer got Fressian and was told nothing.
+
+  It also passed `:compressor null-compressor` and `:encryptor
+  null-encryptor`, which `connect-default-store` never reads -- it takes both
+  from `(get-in config [:compressor :type])`. Dead keys that made a top-level
+  spelling look supported; removed."
+  [path & {:keys [opts config] :as params}]
   (let [complete-opts (merge {:sync? true} opts)
         backing (RocksDBStore. path (atom nil))
-        config {:path               path
-                :opts               complete-opts
-                :config             {:sync-blob? true
-                                     :in-place? true
-                                     :lock-blob? true}
-                :default-serializer :FressianSerializer
-                :compressor         null-compressor
-                :encryptor          null-encryptor
-                :buffer-size        (* 1024 1024)}]
-    (connect-default-store backing config)))
+        store-config (merge {:default-serializer :FressianSerializer
+                             :buffer-size        (* 1024 1024)}
+                            (dissoc params :opts :config)
+                            {:path   path
+                             :opts   complete-opts
+                             :config (merge {:sync-blob? true
+                                             :in-place? true
+                                             :lock-blob? true}
+                                            config)})]
+    (connect-default-store backing store-config)))
 
 (defn delete-rocksdb-store [path & {:keys [opts]}]
   (let [complete-opts (merge {:sync? true} opts)
