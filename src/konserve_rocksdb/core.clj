@@ -1,6 +1,6 @@
 (ns konserve-rocksdb.core
   "Address globally aggregated immutable key-value stores(s)."
-  (:require [konserve.impl.defaults :refer [connect-default-store]]
+  (:require [konserve.impl.defaults :refer [connect-default-store normalize-store-config]]
             [konserve.impl.storage-layout :refer [PBackingStore PBackingBlob PBackingLock
                                                   PMultiWriteBackingStore PMultiReadBackingStore
                                                   -delete-store]]
@@ -191,15 +191,24 @@
   [path & {:keys [opts config] :as params}]
   (let [complete-opts (merge {:sync? true} opts)
         backing (RocksDBStore. path (atom nil))
-        store-config (merge {:default-serializer :FressianSerializer
-                             :buffer-size        (* 1024 1024)}
-                            (dissoc params :opts :config)
-                            {:path   path
-                             :opts   complete-opts
-                             :config (merge {:sync-blob? true
-                                             :in-place? true
-                                             :lock-blob? true}
-                                            config)})]
+        ;; NORMALISE THE CALLER FIRST, then fill defaults into the gaps.
+        ;; Emitting `:default-serializer` as our own default would trip
+        ;; konserve's deprecation warning on EVERY connect, for every caller,
+        ;; whatever they passed -- so the canonical shape goes here too. And
+        ;; the order matters: filling first would let our Fressian default
+        ;; occupy the slot and silently drop a caller's older
+        ;; `:default-serializer :BoringSerializer`.
+        store-config (-> (dissoc params :opts)
+                         (assoc :config (or config {}))
+                         normalize-store-config
+                         (update :config #(merge {:sync-blob? true
+                                                  :in-place? true
+                                                  :lock-blob? true}
+                                                 %))
+                         (update-in [:config :encoding]
+                                    #(merge {:serializer :FressianSerializer} %))
+                         (update :buffer-size #(or % (* 1024 1024)))
+                         (assoc :path path :opts complete-opts))]
     (connect-default-store backing store-config)))
 
 (defn delete-rocksdb-store [path & {:keys [opts]}]
