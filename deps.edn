@@ -1,8 +1,10 @@
 {:paths ["src"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
-        io.replikativ/clj-rocksdb {:mvn/version "0.1.33"}
+        ;; MUST NOT MERGE as a local root — revert to the released
+        ;; org.replikativ/clj-rocksdb once replikativ/clj-rocksdb#2 is on Clojars.
+        org.replikativ/clj-rocksdb {:local/root "../clj-rocksdb"}
         com.taoensso/nippy {:mvn/version "3.4.2"}
-        org.replikativ/konserve {:mvn/version "0.9.369"}
+        org.replikativ/konserve {:mvn/version "0.9.376"}
         org.replikativ/superv.async {:mvn/version "0.3.50"}}
  :aliases {:dev {:extra-paths ["test"]}
            :test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.91.1392"}}

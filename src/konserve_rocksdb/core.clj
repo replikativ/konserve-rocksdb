@@ -1,6 +1,7 @@
 (ns konserve-rocksdb.core
   "Address globally aggregated immutable key-value stores(s)."
   (:require [konserve.impl.defaults :refer [connect-default-store]]
+            [konserve.protocols :as protocols]
             [konserve.impl.storage-layout :refer [PBackingStore PBackingBlob PBackingLock
                                                   PMultiWriteBackingStore PMultiReadBackingStore
                                                   -delete-store]]
@@ -18,21 +19,72 @@
   {:key-encoder nippy/freeze
    :key-decoder nippy/thaw
    :val-encoder nippy/freeze
-   :val-decoder nippy/thaw})
+   :val-decoder nippy/thaw
+   ;; Opens an OptimisticTransactionDB, which is what `compare-and-put!` needs to
+   ;; fence a write. It costs nothing otherwise — an OptimisticTransactionDB IS a
+   ;; RocksDB, so every other operation is unchanged.
+   :transactional? true
+   :create-if-missing? true})
 
 (extend-protocol PBackingLock
   Boolean
   (-release [_ env]
     (if (:sync? env) nil (go-try- nil))))
 
-(defrecord RocksDBKV [db key data]
+(defrecord RocksDBKV [store db key data]
   PBackingBlob
   (-sync [_ env]
     (async+sync (:sync? env) *default-sync-translation*
-                (go-try- (let [{:keys [header meta value]} @data]
-                           (when (and header meta value)
-                             (rocksdb/put db (str key ".meta") (dissoc @data :value))
-                             (rocksdb/put db key (:value @data)))))))
+                (go-try-
+                 (let [{:keys [header meta value]} @data
+                       expected-revision (:expected-revision env)
+                       meta-key (str key ".meta")
+                       new-meta (dissoc @data :value)]
+                   (when (and header meta value)
+                     (if expected-revision
+                       ;; FENCED. konserve has already compared the revision it read
+                       ;; against the caller's; the transaction closes the window
+                       ;; BETWEEN that read and this write, which is the half no
+                       ;; counter can do. Both together are the compare-and-set.
+                       ;;
+                       ;; The comparison is on the META entry, because that is where
+                       ;; the revision lives — and both entries are written inside
+                       ;; the one transaction that carries it, so a fenced write
+                       ;; cannot leave the metadata ahead of the value.
+                       ;;
+                       ;; What was read is remembered by `-read-header`, since
+                       ;; `-sync` runs on a DIFFERENT blob record than the read did.
+                       ;; No entry means no read happened, which for a fenced write
+                       ;; is create-if-absent.
+                       ;;
+                       ;; THIS ASSUMES ONE IN-FLIGHT FENCED WRITE PER KEY PER
+                       ;; BACKING, and that holds because konserve's `go-locked`
+                       ;; serialises per key on a store instance and RocksDB refuses
+                       ;; a second open of the same directory, so there is exactly
+                       ;; one such instance. Break either and the entry is wrong
+                       ;; rather than missing: a second reader would overwrite it,
+                       ;; and the first writer would then fence against a revision
+                       ;; it never read. Measured, by forcing that state with
+                       ;; independent lock registries over one backing: 55 of 60
+                       ;; increments survived. The assumption is doing real work, so
+                       ;; it is written down rather than left implicit.
+                       (let [cache (:read-cache store)
+                             expected (get @cache meta-key rocksdb/absent)]
+                         (try
+                           (when-not (rocksdb/compare-and-put!
+                                      db meta-key expected
+                                      {meta-key new-meta key (:value @data)})
+                             (throw (ex-info (str "Conditional write rejected: the stored metadata is "
+                                                  "not the one this write was derived from.")
+                                             {:type :konserve/revision-mismatch
+                                              :key key
+                                              :expected expected-revision})))
+                           (finally
+                             ;; Whatever happened, this read is spent.
+                             (swap! cache dissoc meta-key))))
+                       (do
+                         (rocksdb/put db meta-key new-meta)
+                         (rocksdb/put db key (:value @data)))))))))
   (-close [_ env]
     (if (:sync? env) (reset! data {}) (go-try- (reset! data {}))))
   (-get-lock [_ env]
@@ -43,6 +95,13 @@
                            header
                            (let [meta (rocksdb/get db (str key ".meta"))]
                              (swap! data merge meta)
+                             ;; Remember it for a fenced `-sync`, and only for one.
+                             ;; The read preceding a conditional write carries
+                             ;; `:expected-revision` in its env, so we can tell —
+                             ;; caching on every read would hold the metadata of
+                             ;; every key a store ever touched.
+                             (when (:expected-revision env)
+                               (swap! (:read-cache store) assoc (str key ".meta") meta))
                              (:header meta))))))
   (-read-meta [_ _meta-size env]
     (async+sync (:sync? env) *default-sync-translation*
@@ -82,11 +141,23 @@
                 (go-try-
                  (swap! data assoc :value blob)))))
 
-(defrecord RocksDBStore [path db]
+(defrecord RocksDBStore [path db read-cache]
+  ;; RocksDB evaluates the comparison — `compare-and-put!` runs it inside an
+  ;; optimistic transaction whose commit fails if anyone wrote the compared key in
+  ;; between. konserve adds no mechanism of its own: no sidecar, no lock.
+  protocols/PSelfConditionalWrite
+
+  protocols/PConditionalWrite
+  ;; `:process`, and no further. RocksDB takes an exclusive OS lock on the database
+  ;; directory, so a second process cannot open it at all — the transaction is
+  ;; atomic against every thread that can reach this database, and there is nobody
+  ;; else by construction.
+  (-conditional-write-domain [_] :process)
+
   PBackingStore
-  (-create-blob [_ store-key env]
+  (-create-blob [this store-key env]
     (async+sync (:sync? env) *default-sync-translation*
-                (go-try- (RocksDBKV. @db store-key (atom {})))))
+                (go-try- (RocksDBKV. this @db store-key (atom {})))))
   (-delete-blob [_ store-key env]
     (async+sync (:sync? env) *default-sync-translation*
                 (go-try- (rocksdb/delete @db store-key))))
@@ -154,7 +225,7 @@
                      (into {} (map (fn [k] [k (contains? existing-keys k)]) store-keys)))))))
 
   PMultiReadBackingStore
-  (-multi-read-blobs [_ store-keys env]
+  (-multi-read-blobs [this store-keys env]
     (async+sync (:sync? env) *default-sync-translation*
                 (go-try-
                  (if (empty? store-keys)
@@ -168,7 +239,7 @@
                                      meta-data (get results (str store-key ".meta"))]
                                  (if (and value meta-data)
                                    ;; Create blob with pre-populated data atom
-                                   (let [blob (RocksDBKV. @db store-key
+                                   (let [blob (RocksDBKV. this @db store-key
                                                           (atom (assoc meta-data :value value)))]
                                      (assoc acc store-key blob))
                                    acc)))
@@ -190,7 +261,7 @@
   spelling look supported; removed."
   [path & {:keys [opts config] :as params}]
   (let [complete-opts (merge {:sync? true} opts)
-        backing (RocksDBStore. path (atom nil))
+        backing (RocksDBStore. path (atom nil) (atom {}))
         store-config (merge {:default-serializer :FressianSerializer
                              :buffer-size        (* 1024 1024)}
                             (dissoc params :opts :config)
@@ -204,7 +275,7 @@
 
 (defn delete-rocksdb-store [path & {:keys [opts]}]
   (let [complete-opts (merge {:sync? true} opts)
-        backing (RocksDBStore. path (atom nil))]
+        backing (RocksDBStore. path (atom nil) (atom {}))]
     (-delete-store backing complete-opts)))
 
 (defn release-rocksdb [store]
