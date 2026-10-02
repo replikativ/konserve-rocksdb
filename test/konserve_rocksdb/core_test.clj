@@ -126,3 +126,21 @@
         (finally
           (release-rocksdb store)
           (delete-rocksdb-store path :opts {:sync? true}))))))
+
+(deftest an-existing-store-opens-with-its-data
+  (testing "konserve 0.9.39x connects through the backing's `-store-exists?`,
+            then `-open-store` for a store that exists. A second connect to the
+            same path must open it, not create it, and must see what the first
+            connection wrote."
+    (let [path "/tmp/krdb-test-reopen"]
+      (try (delete-rocksdb-store path) (catch Exception _ nil))
+      (let [s1 (connect-rocksdb-store path)]
+        (k/assoc s1 "k" {:v 1} {:sync? true})
+        (release-rocksdb s1))
+      (let [s2 (connect-rocksdb-store path)]
+        (try
+          (is (= {:v 1} (k/get s2 "k" nil {:sync? true})))
+          (k/assoc s2 "k2" 2 {:sync? true})
+          (is (= #{"k" "k2"} (set (map :key (k/keys s2 {:sync? true})))))
+          (finally (release-rocksdb s2))))
+      (delete-rocksdb-store path))))

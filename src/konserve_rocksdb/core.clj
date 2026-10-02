@@ -3,6 +3,7 @@
   (:require [konserve.impl.defaults :refer [connect-default-store]]
             [konserve.protocols :as protocols]
             [konserve.impl.storage-layout :refer [PBackingStore PBackingBlob PBackingLock
+                                                  PBackingOpen
                                                   PMultiWriteBackingStore PMultiReadBackingStore
                                                   -delete-store]]
             [konserve.utils :refer [async+sync *default-sync-translation*]]
@@ -179,6 +180,14 @@
   (-create-store [_ env]
     (async+sync (:sync? env) *default-sync-translation*
                 (go-try- (reset! db (rocksdb/create-db path rocks-db-config)))))
+  ;; `connect-default-store` asks the BACKING whether the store exists, then
+  ;; opens it (`-open-store`) or creates it (`-create-store`). A RocksDB
+  ;; database always has a CURRENT file, so that is the test. The
+  ;; `store/-store-exists?` multimethod below is a different function: it
+  ;; answers for the config, before there is a backing.
+  (-store-exists? [_ env]
+    (async+sync (:sync? env) *default-sync-translation*
+                (go-try- (.exists (clojure.java.io/file path "CURRENT")))))
   (-sync-store [_ env]
     (async+sync (:sync? env) *default-sync-translation*
                 (go-try- (rocksdb/sync @db))))
@@ -190,6 +199,15 @@
                 (go-try- (->> (rocksdb/iterator @db)
                               (map first)
                               (filter #(not (str/ends-with? % ".meta")))))))
+
+  ;; `-create-store` also OPENS the database handle, so an existing store needs
+  ;; this to get one: `connect-default-store` calls `-create-store` only for a
+  ;; missing store. Without it, every operation on a reopened store reaches a
+  ;; nil handle.
+  PBackingOpen
+  (-open-store [_ env]
+    (async+sync (:sync? env) *default-sync-translation*
+                (go-try- (reset! db (rocksdb/create-db path rocks-db-config)))))
 
   PMultiWriteBackingStore
   (-multi-write-blobs [_ store-key-values env]
